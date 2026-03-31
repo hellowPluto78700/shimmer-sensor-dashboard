@@ -32,6 +32,11 @@ Angular-based web application for managing and visualizing Shimmer wearable sens
 git clone https://github.com/shimmerumass/shimmer-sensor-dashboard.git
 cd shimmer-sensor-dashboard
 ```
+If you are using GitLab SSH access, you can also clone with:
+```bash
+git clone git@gitlab.com:umass-shimmer/Shimmer_Server_UI.git
+cd Shimmer_Server_UI
+```
 
 2. Install dependencies:
 ```bash
