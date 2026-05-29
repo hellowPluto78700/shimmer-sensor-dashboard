@@ -298,10 +298,15 @@ export class DataGrid implements OnInit, OnChanges {
 
 
   @Input() initialFilter: string = '';
+  @Input() isLoggedIn = false;
+  @Input() isAdmin = false;
   quickFilterText: string = '';
   isLoading: boolean = true;
+  private allRowData: any[] = [];
 
-  constructor(private apiService: ApiService) {}
+  constructor(private apiService: ApiService) {
+    this.syncReviewColumns();
+  }
 
   formatRecordedTimestamp(timestamp: string): string {
     if (!timestamp) return '';
@@ -326,6 +331,253 @@ export class DataGrid implements OnInit, OnChanges {
     return times.length ? Math.max(...times) : 0;
   }
 
+  private rowVisibleFlag(s1: any, s2: any): boolean {
+    if (s1?.full_file_name && s1.visible_flag === false) return false;
+    if (s2?.full_file_name && s2.visible_flag === false) return false;
+    return true;
+  }
+
+  private rowAdminComment(s1: any, s2: any): string {
+    const c1 = s1?.admin_comment;
+    const c2 = s2?.admin_comment;
+    if (c1 != null && c1 !== '') return String(c1);
+    if (c2 != null && c2 !== '') return String(c2);
+    return '';
+  }
+
+  private syncReviewColumns(): void {
+    this.columnDefs = this.columnDefs.filter((c) => (c as ColGroupDef).groupId !== 'review');
+
+    if (this.isAdmin) {
+      this.columnDefs = [...this.columnDefs, this.getAdminReviewColumnGroup()];
+    } else if (this.isLoggedIn) {
+      this.columnDefs = [...this.columnDefs, this.getReadOnlyCommentColumnGroup()];
+    }
+  }
+
+  private reviewGroupBase(): Pick<ColGroupDef, 'groupId' | 'headerClass'> {
+    return {
+      groupId: 'review',
+      headerClass: 'review-header-group',
+    };
+  }
+
+  private getReadOnlyCommentColumnGroup(): ColGroupDef {
+    return {
+      ...this.reviewGroupBase(),
+      headerName: 'Note',
+      children: [
+        {
+          headerName: 'Comment',
+          field: 'admin_comment',
+          pinned: 'right',
+          minWidth: 200,
+          maxWidth: 280,
+          sortable: false,
+          filter: 'agTextColumnFilter',
+          cellClass: 'review-comment-readonly',
+          valueFormatter: (params) => params.value ?? '—',
+        },
+      ],
+    };
+  }
+
+  private getAdminReviewColumnGroup(): ColGroupDef {
+    return {
+      ...this.reviewGroupBase(),
+      headerName: 'Review',
+      children: [
+        {
+          headerName: 'Comment',
+          field: 'admin_comment',
+          pinned: 'right',
+          minWidth: 180,
+          width: 220,
+          sortable: false,
+          filter: 'agTextColumnFilter',
+          cellClass: 'review-comment-cell',
+          suppressMovable: true,
+          cellRenderer: (params: any) => {
+            const wrap = document.createElement('div');
+            wrap.className = 'review-comment-wrap';
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'review-comment-input';
+            input.value = params.data.admin_comment ?? '';
+            input.placeholder = 'Add comment…';
+            input.oninput = () => {
+              params.data.admin_comment = input.value;
+            };
+            wrap.appendChild(input);
+            return wrap;
+          },
+        },
+        {
+          headerName: 'Show',
+          field: 'row_review_visible',
+          pinned: 'right',
+          width: 52,
+          minWidth: 52,
+          maxWidth: 52,
+          resizable: false,
+          sortable: false,
+          filter: false,
+          suppressMovable: true,
+          cellClass: 'review-visible-cell',
+          cellRenderer: (params: any) => {
+            const wrap = document.createElement('div');
+            wrap.className = 'review-cell-center';
+            const visible = params.data.visible_flag !== false;
+            const eyeBtn = document.createElement('button');
+            eyeBtn.type = 'button';
+            eyeBtn.className = 'review-icon-btn' + (visible ? '' : ' review-icon-btn--hidden');
+            eyeBtn.title = visible ? 'Visible — click to hide' : 'Hidden — click to show';
+            eyeBtn.innerHTML = visible
+              ? `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`
+              : `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+            eyeBtn.onclick = (e) => {
+              e.stopPropagation();
+              params.data.visible_flag = !visible;
+              params.api.refreshCells({ rowNodes: [params.node], columns: ['row_review_visible'], force: true });
+            };
+            wrap.appendChild(eyeBtn);
+            return wrap;
+          },
+        },
+        {
+          headerName: 'Save',
+          field: 'row_review_save',
+          pinned: 'right',
+          width: 76,
+          minWidth: 76,
+          maxWidth: 76,
+          resizable: false,
+          sortable: false,
+          filter: false,
+          suppressMovable: true,
+          cellClass: 'review-save-cell',
+          cellRenderer: (params: any) => {
+            const wrap = document.createElement('div');
+            wrap.className = 'review-cell-center';
+            const saveBtn = document.createElement('button');
+            saveBtn.type = 'button';
+            saveBtn.className = 'review-save-btn';
+            saveBtn.textContent = 'Save';
+            saveBtn.title = 'Save changes';
+            saveBtn.onclick = (e) => {
+              e.stopPropagation();
+              this.saveRowMetadata(params.data, saveBtn);
+            };
+            wrap.appendChild(saveBtn);
+            return wrap;
+          },
+        },
+      ],
+    };
+  }
+
+  private saveRowMetadata(row: any, btn: HTMLButtonElement): void {
+    const files = [row.shimmer1_full_file_name, row.shimmer2_full_file_name].filter(
+      (f): f is string => !!f
+    );
+    if (!files.length) {
+      this.showToast('No files on this row to save.');
+      return;
+    }
+    btn.disabled = true;
+    btn.style.opacity = '0.6';
+    this.apiService
+      .patchDecodedFilesMetadata({
+        files,
+        visible_flag: row.visible_flag !== false,
+        admin_comment: row.admin_comment?.trim() ? row.admin_comment.trim() : null,
+      })
+      .subscribe({
+        next: () => {
+          this.showToast('Row saved.');
+          btn.disabled = false;
+          btn.style.opacity = '1';
+        },
+        error: (err) => {
+          console.error('Failed to save row metadata', err);
+          alert('Failed to save. Is the backend deployed?');
+          btn.disabled = false;
+          btn.style.opacity = '1';
+        },
+      });
+  }
+
+  private applyRowVisibilityFilter(rows: any[]): any[] {
+    if (this.isAdmin) return rows;
+    return rows.filter((row) => row.visible_flag !== false);
+  }
+
+  private loadGridData(): void {
+    this.isLoading = true;
+    this.apiService.listFilesCombinedMeta().subscribe({
+      next: (resp: any) => {
+        if (resp && Array.isArray(resp.data)) {
+          const rows = resp.data.flatMap((item: any) => {
+            const shimmer1Arr = item.shimmer1_decoded || [];
+            const shimmer2Arr = item.shimmer2_decoded || [];
+            const maxLen = Math.max(shimmer1Arr.length, shimmer2Arr.length);
+            const itemRows = [];
+            for (let i = 0; i < maxLen; i++) {
+              const s1 = shimmer1Arr[i] || {};
+              const s2 = shimmer2Arr[i] || {};
+              itemRows.push({
+                patient: item.patient,
+                device: item.device,
+                date: item.date,
+                shimmer1: item.shimmer1,
+                shimmer2: item.shimmer2,
+                startRecordedSortMs: this.rowStartRecordedSortMs(s1, s2),
+                visible_flag: this.rowVisibleFlag(s1, s2),
+                admin_comment: this.rowAdminComment(s1, s2),
+                shimmer1_recorded_timestamp: s1.recordedTimestamp ? this.formatRecordedTimestamp(s1.recordedTimestamp) : null,
+                shimmer1_end_recorded_timestamp: s1.endRecordedTimestamp
+                  ? this.formatRecordedTimestamp(s1.endRecordedTimestamp)
+                  : null,
+                shimmer1_time: s1.time,
+                shimmer1_full_file_name: s1.full_file_name,
+                shimmer1_mac_address: s1.macAddress,
+                shimmer1_experiment_name: s1.experiment_name,
+                shimmer1_shimmer_device: s1.shimmer_device,
+                shimmer1_filename: s1.filename,
+                shimmer1_shimmer_day: s1.shimmer_day,
+                shimmer1_part: s1.part,
+                shimmer1_accel_var: s1.Accel_WR_VAR ? parseFloat(Number(s1.Accel_WR_VAR).toFixed(4)) : null,
+                shimmer2_recorded_timestamp: s2.recordedTimestamp ? this.formatRecordedTimestamp(s2.recordedTimestamp) : null,
+                shimmer2_end_recorded_timestamp: s2.endRecordedTimestamp
+                  ? this.formatRecordedTimestamp(s2.endRecordedTimestamp)
+                  : null,
+                shimmer2_time: s2.time,
+                shimmer2_full_file_name: s2.full_file_name,
+                shimmer2_mac_address: s2.macAddress,
+                shimmer2_experiment_name: s2.experiment_name,
+                shimmer2_shimmer_device: s2.shimmer_device,
+                shimmer2_filename: s2.filename,
+                shimmer2_shimmer_day: s2.shimmer_day,
+                shimmer2_part: s2.part,
+                shimmer2_accel_var: s2.Accel_WR_VAR ? parseFloat(Number(s2.Accel_WR_VAR).toFixed(4)) : null,
+              });
+            }
+            return itemRows;
+          });
+          rows.sort((a: { startRecordedSortMs: number }, b: { startRecordedSortMs: number }) =>
+            b.startRecordedSortMs - a.startRecordedSortMs
+          );
+          this.allRowData = rows;
+          this.rowData = this.applyRowVisibilityFilter(rows);
+        }
+        this.isLoading = false;
+      },
+      error: () => {
+        this.isLoading = false;
+      },
+    });
+  }
+
   ngOnInit(): void {
     // Set initial filter from input if provided
     if (this.initialFilter) {
@@ -334,68 +586,19 @@ export class DataGrid implements OnInit, OnChanges {
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    // Update quickFilterText when initialFilter input changes
-    if (changes['initialFilter'] && changes['initialFilter'].currentValue) {
+    if (changes['initialFilter']?.currentValue) {
       this.quickFilterText = changes['initialFilter'].currentValue;
     }
-    this.apiService.listFilesCombinedMeta().subscribe((resp: any) => {
-      if (resp && Array.isArray(resp.data)) {
-        const rows = resp.data.flatMap((item: any) => {
-          const shimmer1Arr = item.shimmer1_decoded || [];
-          const shimmer2Arr = item.shimmer2_decoded || [];
-          const maxLen = Math.max(shimmer1Arr.length, shimmer2Arr.length);
-          const itemRows = [];
-          for (let i = 0; i < maxLen; i++) {
-            const s1 = shimmer1Arr[i] || {};
-            const s2 = shimmer2Arr[i] || {};
-            itemRows.push({
-              patient: item.patient,
-              device: item.device,
-              date: item.date,
-              shimmer1: item.shimmer1,
-              shimmer2: item.shimmer2,
-              startRecordedSortMs: this.rowStartRecordedSortMs(s1, s2),
-              // Shimmer 1 fields
-              shimmer1_recorded_timestamp: s1.recordedTimestamp ? this.formatRecordedTimestamp(s1.recordedTimestamp) : null,
-              shimmer1_end_recorded_timestamp: s1.endRecordedTimestamp
-                ? this.formatRecordedTimestamp(s1.endRecordedTimestamp)
-                : null,
-              shimmer1_time: s1.time,
-              shimmer1_full_file_name: s1.full_file_name,
-              shimmer1_mac_address: s1.macAddress,
-              shimmer1_experiment_name: s1.experiment_name,
-              shimmer1_shimmer_device: s1.shimmer_device,
-              shimmer1_filename: s1.filename,
-              shimmer1_shimmer_day: s1.shimmer_day,
-              shimmer1_part: s1.part,
-              shimmer1_accel_var: s1.Accel_WR_VAR ? parseFloat(Number(s1.Accel_WR_VAR).toFixed(4)) : null,
-              // Shimmer 2 fields
-              shimmer2_recorded_timestamp: s2.recordedTimestamp ? this.formatRecordedTimestamp(s2.recordedTimestamp) : null,
-              shimmer2_end_recorded_timestamp: s2.endRecordedTimestamp
-                ? this.formatRecordedTimestamp(s2.endRecordedTimestamp)
-                : null,
-              shimmer2_time: s2.time,
-              shimmer2_full_file_name: s2.full_file_name,
-              shimmer2_mac_address: s2.macAddress,
-              shimmer2_experiment_name: s2.experiment_name,
-              shimmer2_shimmer_device: s2.shimmer_device,
-              shimmer2_filename: s2.filename,
-              shimmer2_shimmer_day: s2.shimmer_day,
-              shimmer2_part: s2.part,
-              shimmer2_accel_var: s2.Accel_WR_VAR ? parseFloat(Number(s2.Accel_WR_VAR).toFixed(4)) : null
-            });
-          }
-          return itemRows;
-        });
-        rows.sort((a: { startRecordedSortMs: number }, b: { startRecordedSortMs: number }) =>
-          b.startRecordedSortMs - a.startRecordedSortMs
-        );
-        this.rowData = rows;
+    if (changes['isLoggedIn'] || changes['isAdmin']) {
+      this.syncReviewColumns();
+      if (this.allRowData.length) {
+        this.rowData = this.applyRowVisibilityFilter(this.allRowData);
+        if (!changes['initialFilter']) {
+          return;
+        }
       }
-      this.isLoading = false;
-    }, () => {
-      this.isLoading = false;
-    });
+    }
+    this.loadGridData();
   }
 
   gridOptions: any;
