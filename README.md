@@ -78,7 +78,7 @@ ng build --configuration production
 ### Data Grid Component
 Displays Shimmer sensor metadata with:
 - Patient and device information
-- Timestamp data
+- **Recorded Time (GMT)** and **End Recorded Time (GMT)** per hand (see [Recorded Timestamps](#recorded-timestamps))
 - Accelerometer variance values
 - Graph visualization buttons for Shimmer 1 and Shimmer 2 sensors
 
@@ -94,9 +94,10 @@ Main dashboard featuring:
 ### API Service
 Handles data fetching from backend:
 - `listFilesMetadata()`: Basic file metadata (device, date, patient, files)
-- `listFilesCombinedMeta()`: Complete metadata with decoded sensor data
+- `listFilesCombinedMeta()`: Complete metadata with decoded sensor data (used by the home data grid for recorded timestamps)
 - `listUniquePatients()`: Patient list for mapping
 - `listFilesDeconstructed()`: Parsed file structure
+- `getDecodedFieldDirect()`: Raw decoded field arrays (e.g. `timestampCal`) for chart buttons only — not used for the Recorded Time columns
 
 ### Latest File Per Device Page
 Displays the most recent file received for each Shimmer device:
@@ -242,12 +243,64 @@ Sensor data files can contain tens of thousands of time-series points (e.g., 55,
 
 **Tip:** If the chart looks sparse or too dense, adjust the slider to find the best balance between detail and speed. The original data size is always shown for reference.
 
+## Recorded Timestamps
+
+The **home page data grid** (`src/app/comp/data-grid/`) shows recording start and end times for each decoded file per hand.
+
+### API (UI reads from here)
+
+| Item | Value |
+|------|--------|
+| **Endpoint** | `GET /files/combined-meta/` |
+| **Client method** | `ApiService.listFilesCombinedMeta()` |
+| **Response path** | `data[].shimmer1_decoded[]` and `data[].shimmer2_decoded[]` |
+
+Example object inside `shimmer1_decoded` / `shimmer2_decoded`:
+
+```json
+{
+  "full_file_name": "device__20251211_223308__experiment__Shimmer_DCFF-000__000.txt",
+  "recordedTimestamp": "2025-12-11T16:32:13.191559+00:00",
+  "endRecordedTimestamp": "2025-12-11T17:32:07.760151+00:00"
+}
+```
+
+### UI field mapping
+
+| Grid column | JSON field | Display format |
+|-------------|------------|----------------|
+| Recorded Time (GMT) | `recordedTimestamp` | `YYYY/MM/DD HH:MM:SS` (UTC) |
+| End Recorded Time (GMT) | `endRecordedTimestamp` | Same format |
+
+The UI does **not** fetch `timestampCal` for these columns. It only formats the ISO strings returned by the API.
+
+### Backend source (DynamoDB)
+
+Written on **`POST /decode-and-store/`** to **DecodedFileMeta** (`DDB_FILE_TABLE`):
+
+| DDB field | Source | Purpose |
+|-----------|--------|---------|
+| `recordedTimestamp` | `timestampCal[0]` → UTC ISO string | Recording start; grouping, daily aggregator, zip-by-date |
+| `endRecordedTimestamp` | `timestampCal[-1]` → UTC ISO string | Recording end (same conversion as start) |
+
+Ensure `/files/combined-meta/` includes both fields on each entry in `shimmer1_decoded` and `shimmer2_decoded` when assembling the response from DecodedFileMeta. Existing files need re-decode or a DDB backfill before `endRecordedTimestamp` appears in the grid.
+
+### Not the same as the Dashboard chart timeline
+
+The **Dashboard** page (`/dashboard`) uses different endpoints and fields for chart x-axis / timeline UI:
+
+- `GET /combined-data-files/` — table rows (date, patient, file names)
+- `GET /get-combined-data-file/?filename=...` — `file_timestamps[]` with per-segment `timestamp`, `duration_seconds`, etc.
+
+That timeline is separate from the home data grid’s `recordedTimestamp` / `endRecordedTimestamp` columns.
+
 ## Data Flow
 
-1. **Metadata Loading**: API fetches combined metadata from S3 backend
-2. **Grid Display**: Data is processed and displayed in AG Grid with Shimmer 1/2 columns
-3. **Graph Visualization**: Clicking graph button emits time-series data to parent component
-4. **Chart Rendering**: Modal opens with Chart.js rendering the time vs acceleration data
+1. **Decode & store**: `POST /decode-and-store/` writes DecodedFileMeta to DynamoDB (`recordedTimestamp`, `endRecordedTimestamp`)
+2. **Metadata loading**: `GET /files/combined-meta/` returns decoded entries in `shimmer1_decoded` / `shimmer2_decoded`
+3. **Grid display**: Home data grid formats those ISO strings as Recorded Time / End Recorded Time columns
+4. **Graph visualization**: Graph buttons call `GET /get-decoded-field-direct/` for full `timestampCal` and accel arrays
+5. **Chart rendering**: Modal opens with Chart.js rendering time vs acceleration data
 
 ## Contributing
 

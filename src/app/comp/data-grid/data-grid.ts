@@ -46,7 +46,8 @@ export class DataGrid implements OnInit, OnChanges {
       headerName: 'Left Hand Device',
       groupId: 'shimmer1',
       children: [
-        { headerName: 'Recorded Time (GMT)', field: 'shimmer1_recorded_timestamp', filter: 'agTextColumnFilter', sortable: true, minWidth: 180, maxWidth: 220 },
+        { headerName: 'Start Time (GMT)', field: 'shimmer1_recorded_timestamp', filter: 'agTextColumnFilter', sortable: true, sort: 'desc', comparator: (_a, _b, nodeA, nodeB) => (nodeA.data?.startRecordedSortMs ?? 0) - (nodeB.data?.startRecordedSortMs ?? 0), minWidth: 180, maxWidth: 220 },
+        { headerName: 'End Time (GMT)', field: 'shimmer1_end_recorded_timestamp', filter: 'agTextColumnFilter', sortable: true, minWidth: 180, maxWidth: 220 },
         { headerName: 'Day', field: 'shimmer1_shimmer_day', filter: 'agTextColumnFilter', sortable: true, minWidth: 80, maxWidth: 100, hide: true},
         { headerName: 'Accel Var', field: 'shimmer1_accel_var', filter: 'agNumberColumnFilter', sortable: true, minWidth: 110, maxWidth: 130, hide: true },
         // { headerName: 'Time', field: 'shimmer1_time', filter: 'agTextColumnFilter', sortable: true, minWidth: 100, maxWidth: 120 },
@@ -171,7 +172,8 @@ export class DataGrid implements OnInit, OnChanges {
       headerName: 'Right Hand Device',
       groupId: 'shimmer2',
       children: [
-        { headerName: 'Recorded Time (GMT)', field: 'shimmer2_recorded_timestamp', filter: 'agTextColumnFilter', sortable: true, minWidth: 180, maxWidth: 220 },
+        { headerName: 'Start Time (GMT)', field: 'shimmer2_recorded_timestamp', filter: 'agTextColumnFilter', sortable: true, minWidth: 180, maxWidth: 220 },
+        { headerName: 'End Time (GMT)', field: 'shimmer2_end_recorded_timestamp', filter: 'agTextColumnFilter', sortable: true, minWidth: 180, maxWidth: 220 },
         { headerName: 'Day', field: 'shimmer2_shimmer_day', filter: 'agTextColumnFilter', sortable: true, minWidth: 80, maxWidth: 100 , hide: true},
         { headerName: 'Accel Var', field: 'shimmer2_accel_var', filter: 'agNumberColumnFilter', sortable: true, minWidth: 110, maxWidth: 130, hide: true },
         // { headerName: 'Time', field: 'shimmer2_time', filter: 'agTextColumnFilter', sortable: true, minWidth: 100, maxWidth: 120 },
@@ -303,9 +305,8 @@ export class DataGrid implements OnInit, OnChanges {
 
   formatRecordedTimestamp(timestamp: string): string {
     if (!timestamp) return '';
-    // Format as readable date-time: YYYY/MM/DD HH:MM:SS (UTC)
-    // timestampCal is ISO 8601 with UTC timezone (+00:00), so we display UTC time as-is
-    // No timezone conversion - both timestampCal and timestamp are in UTC
+    // recordedTimestamp / endRecordedTimestamp from DDB (DecodedFileMeta):
+    // timestampCal[0] and timestampCal[-1] as UTC ISO strings from POST /decode-and-store/
     const date = new Date(timestamp);
     const year = date.getUTCFullYear();
     const month = (date.getUTCMonth() + 1).toString().padStart(2, '0');
@@ -314,6 +315,15 @@ export class DataGrid implements OnInit, OnChanges {
     const minutes = date.getUTCMinutes().toString().padStart(2, '0');
     const seconds = date.getUTCSeconds().toString().padStart(2, '0');
     return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`;
+  }
+
+  /** Latest hand start time on the row (ms since epoch), for default newest-first sort. */
+  private rowStartRecordedSortMs(s1: any, s2: any): number {
+    const times = [s1?.recordedTimestamp, s2?.recordedTimestamp]
+      .filter(Boolean)
+      .map((ts) => new Date(ts).getTime())
+      .filter((t) => !Number.isNaN(t));
+    return times.length ? Math.max(...times) : 0;
   }
 
   ngOnInit(): void {
@@ -330,22 +340,26 @@ export class DataGrid implements OnInit, OnChanges {
     }
     this.apiService.listFilesCombinedMeta().subscribe((resp: any) => {
       if (resp && Array.isArray(resp.data)) {
-        this.rowData = resp.data.flatMap((item: any) => {
+        const rows = resp.data.flatMap((item: any) => {
           const shimmer1Arr = item.shimmer1_decoded || [];
           const shimmer2Arr = item.shimmer2_decoded || [];
           const maxLen = Math.max(shimmer1Arr.length, shimmer2Arr.length);
-          const rows = [];
+          const itemRows = [];
           for (let i = 0; i < maxLen; i++) {
             const s1 = shimmer1Arr[i] || {};
             const s2 = shimmer2Arr[i] || {};
-            rows.push({
+            itemRows.push({
               patient: item.patient,
               device: item.device,
               date: item.date,
               shimmer1: item.shimmer1,
               shimmer2: item.shimmer2,
+              startRecordedSortMs: this.rowStartRecordedSortMs(s1, s2),
               // Shimmer 1 fields
               shimmer1_recorded_timestamp: s1.recordedTimestamp ? this.formatRecordedTimestamp(s1.recordedTimestamp) : null,
+              shimmer1_end_recorded_timestamp: s1.endRecordedTimestamp
+                ? this.formatRecordedTimestamp(s1.endRecordedTimestamp)
+                : null,
               shimmer1_time: s1.time,
               shimmer1_full_file_name: s1.full_file_name,
               shimmer1_mac_address: s1.macAddress,
@@ -357,6 +371,9 @@ export class DataGrid implements OnInit, OnChanges {
               shimmer1_accel_var: s1.Accel_WR_VAR ? parseFloat(Number(s1.Accel_WR_VAR).toFixed(4)) : null,
               // Shimmer 2 fields
               shimmer2_recorded_timestamp: s2.recordedTimestamp ? this.formatRecordedTimestamp(s2.recordedTimestamp) : null,
+              shimmer2_end_recorded_timestamp: s2.endRecordedTimestamp
+                ? this.formatRecordedTimestamp(s2.endRecordedTimestamp)
+                : null,
               shimmer2_time: s2.time,
               shimmer2_full_file_name: s2.full_file_name,
               shimmer2_mac_address: s2.macAddress,
@@ -368,8 +385,12 @@ export class DataGrid implements OnInit, OnChanges {
               shimmer2_accel_var: s2.Accel_WR_VAR ? parseFloat(Number(s2.Accel_WR_VAR).toFixed(4)) : null
             });
           }
-          return rows;
+          return itemRows;
         });
+        rows.sort((a: { startRecordedSortMs: number }, b: { startRecordedSortMs: number }) =>
+          b.startRecordedSortMs - a.startRecordedSortMs
+        );
+        this.rowData = rows;
       }
       this.isLoading = false;
     }, () => {
