@@ -144,7 +144,7 @@
     </div>
   </section> -->
 
-  <app-data-grid [initialFilter]="filterValue || ''" (graphOutput)="openGraphModal($event)"></app-data-grid>
+  <app-data-grid [initialFilter]="filterValue || ''" [isLoggedIn]="isLoggedIn" [isAdmin]="isAdmin" (graphOutput)="openGraphModal($event)"></app-data-grid>
 
 
    <!-- <div class="mt-4">

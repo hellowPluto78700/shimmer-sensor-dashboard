@@ -41,6 +41,9 @@ export class HomePage implements OnInit {
 
   // Filter from URL query parameter
   public filterValue: string | null = null;
+  public isLoggedIn = false;
+  public isAdmin = false;
+  private static readonly ADMIN_EMAIL = 'adminShimmer@umass.edu';
 
   
     lineChartData: ChartConfiguration<'line'>['data'] = {
@@ -94,9 +97,18 @@ export class HomePage implements OnInit {
   async checkAuth() {
     try {
       const session = await fetchAuthSession();
-      const isAuth = session?.tokens?.idToken ? true : false;
-      if (!isAuth) this.router.navigate(['/login']);
+      this.isLoggedIn = !!session?.tokens?.idToken;
+      if (this.isLoggedIn) {
+        const payload = session.tokens!.idToken!.payload;
+        const email = String(payload['email'] ?? payload['cognito:username'] ?? '').toLowerCase();
+        this.isAdmin = email === HomePage.ADMIN_EMAIL.toLowerCase();
+      } else {
+        this.isAdmin = false;
+        this.router.navigate(['/login']);
+      }
     } catch {
+      this.isLoggedIn = false;
+      this.isAdmin = false;
       this.router.navigate(['/login']);
     }
   }
