@@ -243,6 +243,13 @@ Sensor data files can contain tens of thousands of time-series points (e.g., 55,
 
 **Tip:** If the chart looks sparse or too dense, adjust the slider to find the best balance between detail and speed. The original data size is always shown for reference.
 
+## Backend handoff docs
+
+| Doc | Purpose |
+|-----|---------|
+| [docs/backend-admin-file-visibility.md](docs/backend-admin-file-visibility.md) | Problem statement + API spec for admin hide/unhide and row comments (pass to backend agent) |
+| [docs/ui-files-by-hour-handoff.md](docs/ui-files-by-hour-handoff.md) | Full UI ↔ API handoff for Files by Hour Review columns |
+
 ## Recorded Timestamps
 
 The **home page data grid** (`src/app/comp/data-grid/`) shows recording start and end times for each decoded file per hand.
