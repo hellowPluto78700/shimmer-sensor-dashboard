@@ -149,6 +149,26 @@ export class ApiService {
     return this.http.get<any>(`${this.baseUrl}/files/combined-meta/`);
   }
 
+  patchDecodedFilesMetadata(body: {
+    files: string[];
+    visible_flag?: boolean;
+    admin_comment?: string | null;
+  }): Observable<{
+    updated: Array<{
+      full_file_name: string;
+      visible_flag: boolean;
+      admin_comment: string | null;
+    }>;
+  }> {
+    return this.http.patch<{
+      updated: Array<{
+        full_file_name: string;
+        visible_flag: boolean;
+        admin_comment: string | null;
+      }>;
+    }>(`${this.baseUrl}/decoded-files/metadata/`, body);
+  }
+
   // Get decoded field data for plotting
   getDecodedFieldDirect(fullFileName: string, fieldName: string): Observable<any> {
     const params = new HttpParams()
