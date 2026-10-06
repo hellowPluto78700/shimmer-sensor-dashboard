@@ -1,0 +1,125 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Independent Shimmer Angular hosting and Cognito auth, preserving the committed Gen1 login behavior.
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@3
+  com.aws.cloudformation.Context:
+    ref:
+      - at: ../DEPLOYMENT.md
+        has: clone deployment and validation evidence
+Resources:
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    # Preserve cli-inputs.json: username login, required verified email, MFA OFF,
+    # 8-character password with no character-class requirements. No old users migrate.
+    Properties:
+      UserPoolName: !Sub '${AWS::StackName}-users'
+      UserPoolTier: LITE
+      UsernameConfiguration:
+        CaseSensitive: false
+      AutoVerifiedAttributes: [email]
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+      MfaConfiguration: 'OFF'
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: false
+          RequireLowercase: false
+          RequireNumbers: false
+          RequireSymbols: false
+      EmailVerificationSubject: Your verification code
+      EmailVerificationMessage: 'Your verification code is {####}'
+      VerificationMessageTemplate:
+        DefaultEmailOption: CONFIRM_WITH_CODE
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    # Public SPA must have no secret; Amplify's existing SRP/refresh flow is kept.
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: !Sub '${AWS::StackName}-web'
+      GenerateSecret: false
+      RefreshTokenValidity: 30
+      ExplicitAuthFlows: [ALLOW_USER_SRP_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
+      SupportedIdentityProviders: [COGNITO]
+      EnableTokenRevocation: true
+  IdentityPool:
+    Type: AWS::Cognito::IdentityPool
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    # Retain the original authenticated-only identity-pool behavior.
+    Properties:
+      IdentityPoolName: !Sub '${AWS::StackName}-identities'
+      AllowUnauthenticatedIdentities: false
+      CognitoIdentityProviders:
+        - ClientId: !Ref UserPoolClient
+          ProviderName: !GetAtt UserPool.ProviderName
+  AuthenticatedRole:
+    Type: AWS::IAM::Role
+    # Browser fetchAuthSession may obtain credentials, but all data operations
+    # use HTTP API/presigned URLs: no S3/DynamoDB or old-resource policies needed.
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: cognito-identity.amazonaws.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                cognito-identity.amazonaws.com:aud: !Ref IdentityPool
+              ForAnyValue:StringLike:
+                cognito-identity.amazonaws.com:amr: authenticated
+  IdentityPoolRoles:
+    Type: AWS::Cognito::IdentityPoolRoleAttachment
+    Properties:
+      IdentityPoolId: !Ref IdentityPool
+      Roles:
+        authenticated: !GetAtt AuthenticatedRole.Arn
+  AmplifyApp:
+    Type: AWS::Amplify::App
+    # Manual ZIP deployment avoids GitHub OAuth/old Amplify CLI state.
+    # Auth is managed by this stack, never by amplifyPush against the old environment.
+    Properties:
+      Name: !Sub '${AWS::StackName}'
+      Platform: WEB
+      EnvironmentVariables:
+        - Name: SHIMMER_USER_POOL_ID
+          Value: !Ref UserPool
+        - Name: SHIMMER_USER_POOL_CLIENT_ID
+          Value: !Ref UserPoolClient
+        - Name: SHIMMER_IDENTITY_POOL_ID
+          Value: !Ref IdentityPool
+      CustomRules:
+        - Source: '</^[^.]+$|\.(?!(css|gif|ico|jpg|js|png|txt|svg|woff|woff2|ttf|map|json|webp)$)([^.]+$)/>'
+          Target: /index.html
+          Status: '200'
+  AmplifyBranch:
+    Type: AWS::Amplify::Branch
+    Properties:
+      AppId: !GetAtt AmplifyApp.AppId
+      BranchName: clone
+      EnableAutoBuild: false
+      Stage: PRODUCTION
+Outputs:
+  AmplifyAppId:
+    Value: !GetAtt AmplifyApp.AppId
+    Description: New manually deployed Amplify app.
+  FrontendUrl:
+    Value: !Sub 'https://clone.${AmplifyApp.DefaultDomain}'
+    Description: Clone dashboard URL.
+  UserPoolId:
+    Value: !Ref UserPool
+    Description: New username/password user pool.
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+    Description: Public client with no secret.
+  IdentityPoolId:
+    Value: !Ref IdentityPool
+    Description: Authenticated-only identity pool.

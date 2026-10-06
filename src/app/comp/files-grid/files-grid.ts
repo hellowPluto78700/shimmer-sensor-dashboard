@@ -189,7 +189,7 @@ export class FilesGrid implements OnInit {
     return Array.from(s).sort();
   }
 
-  private readonly downloadBase: string = 'https://odb777ddnc.execute-api.us-east-2.amazonaws.com/download/';
+  private readonly downloadBase: string = 'https://wwr1eh4vg9.execute-api.us-east-2.amazonaws.com/download/';
 
   // Global screen loader flag
   isScreenLoading = false;
@@ -387,7 +387,7 @@ export class FilesGrid implements OnInit {
   }
 
   private downloadZipByUserDate(files: any[]) {
-    fetch('https://odb777ddnc.execute-api.us-east-2.amazonaws.com/download-zip-by-user-date/', {
+    fetch('https://wwr1eh4vg9.execute-api.us-east-2.amazonaws.com/download-zip-by-user-date/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'accept': 'application/json' },
       body: JSON.stringify(files)

@@ -27,7 +27,7 @@ export interface DevicePatientRecord {
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
-  private baseUrl = 'https://odb777ddnc.execute-api.us-east-2.amazonaws.com';
+  private baseUrl = 'https://wwr1eh4vg9.execute-api.us-east-2.amazonaws.com';
 
   constructor(private http: HttpClient) {}
 
@@ -140,7 +140,7 @@ export class ApiService {
 
   decodeFile(filename: string) {
     return this.http.get<any>(
-      `https://odb777ddnc.execute-api.us-east-2.amazonaws.com/file/decode/?filename=${encodeURIComponent(filename)}`
+      `https://wwr1eh4vg9.execute-api.us-east-2.amazonaws.com/file/decode/?filename=${encodeURIComponent(filename)}`
     );
   }
 

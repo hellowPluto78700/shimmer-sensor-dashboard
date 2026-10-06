@@ -1,10 +1,4 @@
 version: 1
-backend:
-  phases:
-    build:
-      commands:
-        - '# Execute Amplify CLI with the helper script'
-        - amplifyPush --simple
 frontend:
   phases:
     preBuild:
@@ -12,10 +6,10 @@ frontend:
         - nvm install 20.19.0
         - nvm use 20.19.0
         - npm ci --cache .npm --prefer-offline
-        - npm install -g @angular/cli
+        - node scripts/configure-auth.mjs
     build:
       commands:
-        - ng build
+        - npm run build
   artifacts:
     baseDirectory: dist/shimmer-server-ui/browser
     files:
